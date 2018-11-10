@@ -18,6 +18,7 @@ import (
 
 //Unmarshaller for specified struct, ValueGetter for how to get the value, it get the tag as input and return the value
 type Unmarshaller struct {
+	Values       func() map[string][]string
 	ValueGetter  func(string) []string
 	TagConcatter func(string, string) string
 	// FileGetter            func(string) (multipart.File, *multipart.FileHeader, error)
@@ -36,6 +37,22 @@ func (u *Unmarshaller) Unmarshall(v interface{}) error {
 	if rv.Kind() == reflect.Struct {
 		// for each struct field on v
 		u.unmarshalStructInForm("", rv, 0, false, make(map[string]bool))
+	} else if rv.Kind() == reflect.Map {
+		kType := rv.Type().Key()
+		vType := rv.Type().Elem()
+		if kType.Kind() == reflect.String && vType.Kind() == reflect.Interface {
+			values := u.Values()
+			for key, value := range values {
+				vValue := reflect.ValueOf(value)
+				if vValue.Kind() == reflect.Slice || vValue.Kind() == reflect.Array {
+					if vValue.Len() == 1 {
+						rv.SetMapIndex(reflect.ValueOf(key), vValue.Index(0))
+						continue
+					}
+				}
+				rv.SetMapIndex(reflect.ValueOf(key), reflect.ValueOf(value))
+			}
+		}
 	} else {
 		return fmt.Errorf("v must point to a struct type")
 	}
@@ -193,6 +210,16 @@ func (u *Unmarshaller) getTag(prefix string,
 }
 
 func (u *Unmarshaller) unmarshalField(contex string, v reflect.Value, form_value string, tags []string) error {
+	if fn, ok := u.FillForSpecifiledType[v.Type().PkgPath()+"."+v.Type().Name()]; ok {
+		var err error
+		var nv reflect.Value
+		if nv, err = fn(form_value); err == nil {
+			v.Set(nv)
+		}
+		fmt.Println(v, err)
+		return err
+	}
+
 	// string -> type conversion
 	switch v.Kind() {
 	case reflect.Int64:
@@ -229,6 +256,7 @@ func (u *Unmarshaller) unmarshalField(contex string, v reflect.Value, form_value
 		}
 	case reflect.String:
 		// copy string
+
 		if len(tags) > 0 && tags[len(tags)-1] == "md5" {
 			h := md5.New()
 			h.Write([]byte(form_value))
