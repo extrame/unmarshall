@@ -24,9 +24,13 @@ type Unmarshaller struct {
 	// FileGetter            func(string) (multipart.File, *multipart.FileHeader, error)
 	FillForSpecifiledType map[string]func(string) (reflect.Value, error)
 	AutoFill              bool
+	MaxLength             int
 }
 
 func (u *Unmarshaller) Unmarshall(v interface{}) error {
+	if u.MaxLength == 0 {
+		u.MaxLength = 100
+	}
 	// check v is valid
 	rv := reflect.ValueOf(v).Elem()
 	// dereference pointer
@@ -36,7 +40,7 @@ func (u *Unmarshaller) Unmarshall(v interface{}) error {
 
 	if rv.Kind() == reflect.Struct {
 		// for each struct field on v
-		u.unmarshalStructInForm("", rv, 0, 0, false, make(map[string]int))
+		u.unmarshalStructInForm("", rv, 0, 0, false)
 	} else if rv.Kind() == reflect.Map {
 		kType := rv.Type().Key()
 		vType := rv.Type().Elem()
@@ -63,21 +67,22 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 	rvalue reflect.Value,
 	offset int,
 	deep int,
-	inarray bool,
-	parents map[string]int) (thisObjectIsNotEmpty bool, err error) {
+	inarray bool) (thisObjectIsNotEmpty bool, err error) {
 
 	if rvalue.Type().Kind() == reflect.Ptr {
 		rvalue = rvalue.Elem()
 	}
 	rtype := rvalue.Type()
 
-	parents[rtype.PkgPath()+"/"+rtype.Name()] = deep - 1
-
 	success := false
 
 	for i := 0; i < rtype.NumField() && err == nil; i++ {
-		id, form_values, tag := u.getFormField(context, rtype.Field(i), offset, inarray)
-		glog.Errorln(id, "|", form_values, "|", tag)
+		var id string
+		var form_values, tag []string
+		id, form_values, tag, err = u.getFormField(context, rtype.Field(i), offset, inarray)
+		if err != nil {
+			return
+		}
 		thisObjectIsNotEmpty = thisObjectIsNotEmpty || len(form_values) > 0
 		increaseOffset := !(context != "" && inarray)
 		var used_offset = 0
@@ -92,13 +97,13 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 				if val.IsNil() {
 					val.Set(reflect.New(typ))
 				}
-				if err = u.fill_struct(typ, val.Elem(), id, form_values, tag, used_offset, parents); err != nil {
+				if err = u.fill_struct(typ, val.Elem(), id, form_values, tag, used_offset); err != nil {
 					return false, err
 				} else {
 					break
 				}
 			case reflect.Struct:
-				if err = u.fill_struct(rtype.Field(i).Type, rvalue.Field(i), id, form_values, tag, used_offset, parents); err != nil {
+				if err = u.fill_struct(rtype.Field(i).Type, rvalue.Field(i), id, form_values, tag, used_offset); err != nil {
 					glog.Errorln(err)
 					return false, err
 				} else {
@@ -113,7 +118,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 						res := values[0].Interface()
 						resValue := reflect.ValueOf(res)
 						resType := reflect.TypeOf(res)
-						if err = u.fill_struct(resType, resValue, id, form_values, tag, used_offset, parents); err != nil {
+						if err = u.fill_struct(resType, resValue, id, form_values, tag, used_offset); err != nil {
 							rvalue.Field(i).Set(resValue)
 							return false, err
 						} else {
@@ -132,45 +137,45 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 				}
 				switch subRType.Kind() {
 				case reflect.Struct:
-					if lastDeep, ok := parents[subRType.PkgPath()+"/"+subRType.Name()]; !ok || lastDeep == deep {
-						rvalueTemp := reflect.MakeSlice(rtype.Field(i).Type, 0, 0)
-						offset := 0
-						for {
-							subRValue := reflect.New(subRType)
-							isNotEmpty, _ := u.unmarshalStructInForm(id, subRValue, offset, deep+1, true, parents)
-							if !isNotEmpty {
-								break
-							}
-							offset++
-							rvalueTemp = reflect.Append(rvalueTemp, subRValue.Elem())
+					// if lastDeep, ok := parents[subRType.PkgPath()+"/"+subRType.Name()]; !ok || lastDeep == deep {
+					rvalueTemp := reflect.MakeSlice(rtype.Field(i).Type, 0, 0)
+					offset := 0
+					for {
+						subRValue := reflect.New(subRType)
+						isNotEmpty, _ := u.unmarshalStructInForm(id, subRValue, offset, deep+1, true)
+						if !isNotEmpty {
+							break
 						}
-						rvalue.Field(i).Set(rvalueTemp)
-					} else {
-						err = fmt.Errorf("Too deep of type reuse %v", parents)
+						offset++
+						rvalueTemp = reflect.Append(rvalueTemp, subRValue.Elem())
 					}
+					rvalue.Field(i).Set(rvalueTemp)
+					// } else {
+					// 	err = fmt.Errorf("Too deep of type reuse %v", parents)
+					// }
 				case reflect.Ptr:
 					if subRType.Elem().Kind() == reflect.Struct {
 						var elemType = subRType.Elem()
-						if lastDeep, ok := parents[elemType.PkgPath()+"/"+elemType.Name()]; !ok || lastDeep == deep {
-							rvalueTemp := reflect.MakeSlice(rtype.Field(i).Type, 0, 0)
-							offset := 0
-							for {
-								subRValue := reflect.New(elemType)
-								//依靠下层返回进行终止
-								isNotEmpty, err := u.unmarshalStructInForm(id, subRValue, offset, deep+1, true, parents)
-								if !isNotEmpty {
-									break
-								}
-								if err != nil {
-									glog.Errorln("unmarshall []*struct err ", err)
-								}
-								offset++
-								rvalueTemp = reflect.Append(rvalueTemp, subRValue)
+						// if lastDeep, ok := parents[elemType.PkgPath()+"/"+elemType.Name()]; !ok || lastDeep == deep {
+						rvalueTemp := reflect.MakeSlice(rtype.Field(i).Type, 0, 0)
+						offset := 0
+						for {
+							subRValue := reflect.New(elemType)
+							//依靠下层返回进行终止
+							isNotEmpty, err := u.unmarshalStructInForm(id, subRValue, offset, deep+1, true)
+							if !isNotEmpty {
+								break
 							}
-							rvalue.Field(i).Set(rvalueTemp)
-						} else {
-							err = fmt.Errorf("Too deep of type reuse %v", parents, elemType.PkgPath()+"/"+elemType.Name(), deep)
+							if err != nil {
+								glog.Errorln("unmarshall []*struct err ", err)
+							}
+							offset++
+							rvalueTemp = reflect.Append(rvalueTemp, subRValue)
 						}
+						rvalue.Field(i).Set(rvalueTemp)
+						// } else {
+						// 	err = fmt.Errorf("Too deep of type reuse %v,%T,%d", parents, elemType.PkgPath()+"/"+elemType.Name(), deep)
+						// }
 					}
 				default:
 					len_fv := len(form_values)
@@ -200,13 +205,17 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 	return
 }
 
-func (u *Unmarshaller) getFormField(prefix string, t reflect.StructField, offset int, inarray bool) (string, []string, []string) {
+func (u *Unmarshaller) getFormField(prefix string, t reflect.StructField, offset int, inarray bool) (string, []string, []string, error) {
 
 	tag, tags := u.getTag(prefix, t, offset, inarray)
 
+	if len(tag) > u.MaxLength {
+		return "", nil, nil, errors.New("too deep")
+	}
+
 	values := u.ValueGetter(tag)
 
-	return tag, values, tags[1:]
+	return tag, values, tags[1:], nil
 }
 
 func (u *Unmarshaller) getTag(prefix string,
@@ -248,7 +257,6 @@ func (u *Unmarshaller) unmarshalField(contex string, v reflect.Value, form_value
 		return err
 	}
 
-	// string -> type conversion
 	switch v.Kind() {
 	case reflect.Int64:
 		if i, err := strconv.ParseInt(form_value, 10, 64); err == nil {
@@ -301,9 +309,9 @@ func (u *Unmarshaller) unmarshalField(contex string, v reflect.Value, form_value
 		}
 	case reflect.Bool:
 		// the following strings convert to true
-		// 1,true,on,yes
+		// 1,true,True,on,yes
 		fv := form_value
-		if fv == "1" || fv == "true" || fv == "on" || fv == "yes" {
+		if fv == "1" || fv == "true" || fv == "True" || fv == "on" || fv == "yes" {
 			v.SetBool(true)
 		}
 	default:
@@ -313,7 +321,7 @@ func (u *Unmarshaller) unmarshalField(contex string, v reflect.Value, form_value
 }
 
 func (u *Unmarshaller) fill_struct(typ reflect.Type,
-	val reflect.Value, id string, form_values []string, tag []string, used_offset int, parents map[string]int) error {
+	val reflect.Value, id string, form_values []string, tag []string, used_offset int) error {
 	if typ.PkgPath() == "time" && typ.Name() == "Time" {
 		var fillby string
 		var fillby_valid = regexp.MustCompile(`^\s*fillby\((.*)\)\s*$`)
@@ -363,7 +371,7 @@ func (u *Unmarshaller) fill_struct(typ reflect.Type,
 				}
 			}
 		}
-		u.unmarshalStructInForm(id, val, 0, 0, false, parents)
+		u.unmarshalStructInForm(id, val, 0, 0, false)
 	}
 	return nil
 }
