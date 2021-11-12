@@ -252,7 +252,7 @@ func (u *Unmarshaller) getTag(prefix string,
 
 	if prefix != "" {
 		if inarray {
-			tag = fmt.Sprintf(prefix+"[%d]"+"["+tag+"]", offset)
+			tag = u.TagConcatter(fmt.Sprintf(prefix+"[%d]", offset), tag)
 		} else {
 			tag = u.TagConcatter(prefix, tag)
 		}
