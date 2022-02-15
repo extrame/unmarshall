@@ -414,7 +414,7 @@ func (u *Unmarshaller) fill_struct(typ reflect.Type,
 func (u *Unmarshaller) unmarshallMap(id string, mapValue reflect.Value, tag []string, deep int) error {
 	var maps = make(map[string]bool)
 	var sub url.Values
-	if u.ValueGetter != nil {
+	if u.ValuesGetter != nil {
 		sub = u.ValuesGetter(id)
 	}
 	if sub == nil {
