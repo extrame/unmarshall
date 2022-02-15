@@ -120,7 +120,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 				if err = u.fill_struct(rField.Type, rvalue.Field(i), id, form_values, extraTags, used_offset, deep+1); err != nil {
 					return thisObjectIsNotEmpty, err
 				} else {
-					break
+					continue
 				}
 			case reflect.Interface:
 				//ask the parent to tell me how to unmarshal it
@@ -135,7 +135,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 							rvalue.Field(i).Set(resValue)
 							return false, err
 						} else {
-							break
+							continue
 						}
 					}
 				} else {
@@ -404,7 +404,7 @@ func (u *Unmarshaller) fill_struct(typ reflect.Type,
 			}
 		}
 		isNotEmpty, err := u.unmarshalStructInForm(id, val, 0, deep, false)
-		if !isNotEmpty && err != nil {
+		if isNotEmpty && err != nil {
 			return err
 		}
 	}
@@ -413,7 +413,10 @@ func (u *Unmarshaller) fill_struct(typ reflect.Type,
 
 func (u *Unmarshaller) unmarshallMap(id string, mapValue reflect.Value, tag []string, deep int) error {
 	var maps = make(map[string]bool)
-	sub := u.ValuesGetter(id)
+	var sub url.Values
+	if u.ValueGetter != nil {
+		sub = u.ValuesGetter(id)
+	}
 	if sub == nil {
 		return nil
 	}
