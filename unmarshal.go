@@ -25,7 +25,8 @@ type Unmarshaller struct {
 	FillForSpecifiledType map[string]func(string) (reflect.Value, error)
 	AutoFill              bool
 	MaxLength             int
-	Tag                   string //the tag name of marking default value and action control
+	Tag                   string //the tag name of action control,the value is seperated by ',', first value is the overrided key, second is the default value
+	DefaultTag            string //the tag name to get the default value, if DefaultTag is not empty, the default value will got by the tag, or get from the second value of 'Tag' marked tag
 }
 
 func (u *Unmarshaller) Unmarshall(v interface{}) error {
@@ -33,7 +34,7 @@ func (u *Unmarshaller) Unmarshall(v interface{}) error {
 		u.MaxLength = 100
 	}
 	if u.Tag == "" {
-		u.Tag = "default"
+		u.Tag = "unmarshal"
 	}
 	// check v is valid
 	rv := reflect.ValueOf(v).Elem()
@@ -80,9 +81,9 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 
 	success := false
 	for i := 0; i < rtype.NumField() && err == nil; i++ {
-		var id string
-		var form_values, tag []string
-		id, form_values, tag, err = u.getFormField(context, rtype.Field(i), offset, inarray)
+		var id, defaultVal string
+		var form_values, extraTags []string
+		id, form_values, defaultVal, extraTags, err = u.getFormField(context, rtype.Field(i), offset, inarray)
 		if err == TooDeepErr {
 			err = nil
 			continue
@@ -102,7 +103,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 				val := rvalue.Field(i)
 				typ := rtype.Field(i).Type.Elem()
 				tempVal := reflect.New(typ)
-				if err = u.fill_struct(typ, tempVal.Elem(), id, form_values, tag, used_offset, deep+1); err == nil {
+				if err = u.fill_struct(typ, tempVal.Elem(), id, form_values, extraTags, used_offset, deep+1); err == nil {
 					// 	return false, err
 					// } else {
 					val.Set(tempVal)
@@ -111,7 +112,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 				err = nil
 				continue
 			case reflect.Struct:
-				if err = u.fill_struct(rtype.Field(i).Type, rvalue.Field(i), id, form_values, tag, used_offset, deep+1); err != nil {
+				if err = u.fill_struct(rtype.Field(i).Type, rvalue.Field(i), id, form_values, extraTags, used_offset, deep+1); err != nil {
 					return thisObjectIsNotEmpty, err
 				} else {
 					break
@@ -125,7 +126,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 						res := values[0].Interface()
 						resValue := reflect.ValueOf(res)
 						resType := reflect.TypeOf(res)
-						if err = u.fill_struct(resType, resValue, id, form_values, tag, used_offset, deep+1); err != nil {
+						if err = u.fill_struct(resType, resValue, id, form_values, extraTags, used_offset, deep+1); err != nil {
 							rvalue.Field(i).Set(resValue)
 							return false, err
 						} else {
@@ -195,21 +196,21 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 					lenFv := len(form_values)
 					rvnew := reflect.MakeSlice(rtype.Field(i).Type, lenFv, lenFv)
 					for j := 0; j < lenFv; j++ {
-						u.unmarshalField(context, rvnew.Index(j), form_values[j], tag, false)
+						u.unmarshalField(context, rvnew.Index(j), form_values[j], extraTags, false)
 					}
 					rvalue.Field(i).Set(rvnew)
 				}
 			case reflect.Map:
-				err := u.unmarshallMap(id, rvalue.Field(i), tag, deep)
+				err := u.unmarshallMap(id, rvalue.Field(i), extraTags, deep)
 				if err != nil {
 					return false, errors.Wrap(err, "in unmarshall map")
 				}
 			default:
 				if len(form_values) > 0 && used_offset < len(form_values) {
-					u.unmarshalField(context, rvalue.Field(i), form_values[used_offset], tag, false)
+					u.unmarshalField(context, rvalue.Field(i), form_values[used_offset], extraTags, false)
 					success = true
-				} else if len(tag) > 0 {
-					u.unmarshalField(context, rvalue.Field(i), tag[0], tag, true)
+				} else if defaultVal != "" {
+					u.unmarshalField(context, rvalue.Field(i), defaultVal, extraTags, true)
 				}
 			}
 		} else {
@@ -224,17 +225,23 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 
 var TooDeepErr = errors.New("too deep")
 
-func (u *Unmarshaller) getFormField(prefix string, t reflect.StructField, offset int, inarray bool) (string, []string, []string, error) {
+func (u *Unmarshaller) getFormField(prefix string, t reflect.StructField, offset int, inarray bool) (string, []string, string, []string, error) {
 
 	tag, tags := u.getTag(prefix, t, offset, inarray)
 
 	if len(tag) > u.MaxLength {
-		return "", nil, nil, TooDeepErr
+		return "", nil, "", nil, TooDeepErr
+	}
+	var defaultVal string
+	if u.DefaultTag != "" {
+		defaultVal = t.Tag.Get(u.DefaultTag)
+	} else if len(tags) > 1 {
+		defaultVal = tags[1]
 	}
 
 	values := u.ValueGetter(tag)
 
-	return tag, values, tags[1:], nil
+	return tag, values, defaultVal, tags[1:], nil
 }
 
 func (u *Unmarshaller) getTag(prefix string,

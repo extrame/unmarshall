@@ -65,8 +65,11 @@ func GetChildNode(parent *yaml.Node, name string) (*yaml.Node, error) {
 func UnmarshallFile(fileName string, obj interface{}, tagName ...string) error {
 
 	var tName = defaultTag
+	var defaultValTag string
 	if len(tagName) > 0 {
 		tName = tagName[0]
+	} else if len(tagName) > 1 {
+		defaultValTag = tagName[1]
 	}
 
 	f, err := os.Open(fileName)
@@ -74,7 +77,7 @@ func UnmarshallFile(fileName string, obj interface{}, tagName ...string) error {
 		var node = new(yaml.Node)
 		err = yaml.NewDecoder(f).Decode(node)
 		if err == nil {
-			return UnmarshalNode(node, obj, tName)
+			return UnmarshalNode(node, obj, tName, defaultValTag)
 		}
 	}
 	return err
@@ -92,8 +95,11 @@ func UnmarshalNode(node *yaml.Node, obj interface{}, tagName ...string) error {
 	var content = fetch(node)
 
 	var tName = defaultTag
+	var defaultValTag string
 	if len(tagName) > 0 {
 		tName = tagName[0]
+	} else if len(tagName) > 1 {
+		defaultValTag = tagName[1]
 	}
 
 	var u = unmarshall.Unmarshaller{
@@ -110,8 +116,9 @@ func UnmarshalNode(node *yaml.Node, obj interface{}, tagName ...string) error {
 		TagConcatter: func(prefix string, tag string) string {
 			return prefix + "." + tag
 		},
-		AutoFill: true,
-		Tag:      tName,
+		AutoFill:   true,
+		Tag:        tName,
+		DefaultTag: defaultValTag,
 	}
 	return u.Unmarshall(obj)
 }
