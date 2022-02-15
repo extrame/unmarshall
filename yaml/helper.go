@@ -2,6 +2,7 @@ package yaml
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -77,7 +78,7 @@ func UnmarshallFile(fileName string, obj interface{}, tagName ...string) error {
 	if err == nil {
 		var node = new(yaml.Node)
 		err = yaml.NewDecoder(f).Decode(node)
-		if err == nil {
+		if err == nil || err == io.EOF {
 			return UnmarshalNode(node, obj, tName, defaultValTag)
 		}
 	}
