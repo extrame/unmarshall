@@ -12,13 +12,14 @@ import (
 
 var defaultTag = "yaml_config"
 
-func fetch(node *yaml.Node) map[string]string {
+func fetch(node *yaml.Node) (fetched map[string]string) {
 
-	var fetched = make(map[string]string)
+	if node != nil {
+		fetched = make(map[string]string)
+		execNode(node, fetched)
+	}
 
-	execNode(node, fetched)
-
-	return fetched
+	return
 }
 
 func execNode(content *yaml.Node, fetched map[string]string) {
@@ -108,12 +109,12 @@ func UnmarshalNode(node *yaml.Node, obj interface{}, tagName ...string) error {
 	var u = unmarshall.Unmarshaller{
 		ValueGetter: func(tag string) []string {
 			tag = strings.ToLower(tag)
-			if c, ok := content[tag]; ok {
-				return []string{c}
-			} else {
-				return []string{}
+			if content != nil {
+				if c, ok := content[tag]; ok {
+					return []string{c}
+				}
 			}
-
+			return []string{}
 		},
 		ValuesGetter: nil,
 		TagConcatter: func(prefix string, tag string) string {
