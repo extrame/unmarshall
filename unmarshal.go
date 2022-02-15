@@ -3,7 +3,6 @@ package unmarshall
 import (
 	"crypto/md5"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -13,8 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/glog"
-	"github.com/sirupsen/logrus"
+	"github.com/pkg/errors"
 )
 
 //Unmarshaller for specified struct, ValueGetter for how to get the value, it get the tag as input and return the value
@@ -27,11 +25,15 @@ type Unmarshaller struct {
 	FillForSpecifiledType map[string]func(string) (reflect.Value, error)
 	AutoFill              bool
 	MaxLength             int
+	Tag                   string //the tag name of marking default value and action control
 }
 
 func (u *Unmarshaller) Unmarshall(v interface{}) error {
 	if u.MaxLength == 0 {
 		u.MaxLength = 100
+	}
+	if u.Tag == "" {
+		u.Tag = "default"
 	}
 	// check v is valid
 	rv := reflect.ValueOf(v).Elem()
@@ -131,7 +133,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 						}
 					}
 				} else {
-					glog.Infoln(fmt.Errorf("try to use UnmarshallForm to unmarshall interface type(%T) fail", rvalue.Interface()))
+					return false, fmt.Errorf("try to use UnmarshallForm to unmarshall interface type(%T) fail", rvalue.Interface())
 				}
 			case reflect.Slice:
 				fType := rtype.Field(i).Type
@@ -174,7 +176,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 								break
 							}
 							if err != nil {
-								glog.Errorln("unmarshall []*struct err ", err)
+								return false, errors.Wrap(err, "unmarshall []*struct err ")
 							}
 							offset++
 							rvalueTemp = reflect.Append(rvalueTemp, subRValue)
@@ -198,7 +200,10 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 					rvalue.Field(i).Set(rvnew)
 				}
 			case reflect.Map:
-				u.unmarshallMap(id, rvalue.Field(i), tag, deep)
+				err := u.unmarshallMap(id, rvalue.Field(i), tag, deep)
+				if err != nil {
+					return false, errors.Wrap(err, "in unmarshall map")
+				}
 			default:
 				if len(form_values) > 0 && used_offset < len(form_values) {
 					u.unmarshalField(context, rvalue.Field(i), form_values[used_offset], tag, false)
@@ -208,7 +213,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 				}
 			}
 		} else {
-			glog.Errorf("cannot set value of (%s,%s) in fill", rtype.Field(i).Name, rtype.Field(i).Type.Name())
+			return false, fmt.Errorf("cannot set value of (%s,%s) in fill", rtype.Field(i).Name, rtype.Field(i).Type.Name())
 		}
 	}
 	if !success && err == nil {
@@ -235,7 +240,7 @@ func (u *Unmarshaller) getFormField(prefix string, t reflect.StructField, offset
 func (u *Unmarshaller) getTag(prefix string,
 	t reflect.StructField, offset int, inarray bool) (string, []string) {
 	tags := []string{""}
-	tag := t.Tag.Get("goblet")
+	tag := t.Tag.Get(u.Tag)
 	if tag != "" {
 		tags = strings.Split(tag, ",")
 		tag = tags[0]
@@ -394,9 +399,12 @@ func (u *Unmarshaller) fill_struct(typ reflect.Type,
 	return nil
 }
 
-func (u *Unmarshaller) unmarshallMap(id string, mapValue reflect.Value, tag []string, deep int) {
+func (u *Unmarshaller) unmarshallMap(id string, mapValue reflect.Value, tag []string, deep int) error {
 	var maps = make(map[string]bool)
 	sub := u.ValuesGetter(id)
+	if sub == nil {
+		return nil
+	}
 	for k, _ := range sub {
 		subName := strings.Split(strings.TrimPrefix(k, id+"["), "]")[0]
 		if _, ok := maps[subName]; !ok {
@@ -423,13 +431,16 @@ func (u *Unmarshaller) unmarshallMap(id string, mapValue reflect.Value, tag []st
 						}
 					}
 				case reflect.Map:
-					u.unmarshallMap(id+"["+subName+"]", subRValue.Elem(), tag, deep+1)
+					err := u.unmarshallMap(id+"["+subName+"]", subRValue.Elem(), tag, deep+1)
+					if err != nil {
+						return err
+					}
 				default:
 					form_values := u.ValueGetter(id + "[" + subName + "]")
 					if len(form_values) > 0 {
 						u.unmarshalField(id+"["+subName+"]", subRValue.Elem(), form_values[0], tag, false)
 					} else {
-						logrus.Errorln(id+"["+subName+"]", "has no value")
+						return fmt.Errorf("%s[%s]has no value", id, subName)
 					}
 				}
 				if mapValue.IsNil() {
@@ -440,4 +451,5 @@ func (u *Unmarshaller) unmarshallMap(id string, mapValue reflect.Value, tag []st
 			maps[subName] = true
 		}
 	}
+	return nil
 }
