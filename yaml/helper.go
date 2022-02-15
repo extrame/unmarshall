@@ -68,7 +68,8 @@ func UnmarshallFile(fileName string, obj interface{}, tagName ...string) error {
 	var defaultValTag string
 	if len(tagName) > 0 {
 		tName = tagName[0]
-	} else if len(tagName) > 1 {
+	}
+	if len(tagName) > 1 {
 		defaultValTag = tagName[1]
 	}
 
@@ -98,7 +99,8 @@ func UnmarshalNode(node *yaml.Node, obj interface{}, tagName ...string) error {
 	var defaultValTag string
 	if len(tagName) > 0 {
 		tName = tagName[0]
-	} else if len(tagName) > 1 {
+	}
+	if len(tagName) > 1 {
 		defaultValTag = tagName[1]
 	}
 

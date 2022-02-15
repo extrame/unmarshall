@@ -83,7 +83,12 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 	for i := 0; i < rtype.NumField() && err == nil; i++ {
 		var id, defaultVal string
 		var form_values, extraTags []string
-		id, form_values, defaultVal, extraTags, err = u.getFormField(context, rtype.Field(i), offset, inarray)
+		var rField = rtype.Field(i)
+		if rField.Anonymous {
+			u.unmarshalStructInForm(id, rvalue.Field(i), offset, deep, false)
+			continue
+		}
+		id, form_values, defaultVal, extraTags, err = u.getFormField(context, rField, offset, inarray)
 		if err == TooDeepErr {
 			err = nil
 			continue
@@ -98,10 +103,10 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 			used_offset = offset
 		}
 		if rvalue.Field(i).CanSet() {
-			switch rtype.Field(i).Type.Kind() {
+			switch rField.Type.Kind() {
 			case reflect.Ptr: //TODO if the ptr point to a basic data, it will crash
 				val := rvalue.Field(i)
-				typ := rtype.Field(i).Type.Elem()
+				typ := rField.Type.Elem()
 				tempVal := reflect.New(typ)
 				if err = u.fill_struct(typ, tempVal.Elem(), id, form_values, extraTags, used_offset, deep+1); err == nil {
 					// 	return false, err
@@ -112,7 +117,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 				err = nil
 				continue
 			case reflect.Struct:
-				if err = u.fill_struct(rtype.Field(i).Type, rvalue.Field(i), id, form_values, extraTags, used_offset, deep+1); err != nil {
+				if err = u.fill_struct(rField.Type, rvalue.Field(i), id, form_values, extraTags, used_offset, deep+1); err != nil {
 					return thisObjectIsNotEmpty, err
 				} else {
 					break
@@ -121,7 +126,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 				//ask the parent to tell me how to unmarshal it
 				mtd := rvalue.MethodByName("UnmarshallForm")
 				if mtd.IsValid() {
-					values := mtd.Call([]reflect.Value{reflect.ValueOf(rtype.Field(i).Name)})
+					values := mtd.Call([]reflect.Value{reflect.ValueOf(rField.Name)})
 					if len(values) == 2 && values[1].Interface() == nil {
 						res := values[0].Interface()
 						resValue := reflect.ValueOf(res)
@@ -137,8 +142,8 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 					return false, fmt.Errorf("try to use UnmarshallForm to unmarshall interface type(%T) fail", rvalue.Interface())
 				}
 			case reflect.Slice:
-				fType := rtype.Field(i).Type
-				subRType := rtype.Field(i).Type.Elem()
+				fType := rField.Type
+				subRType := rField.Type.Elem()
 				if fType.PkgPath() == "net" && fType.Name() == "IP" && len(form_values) > 0 && used_offset < len(form_values) {
 					rvalue.Field(i).Set(reflect.ValueOf(net.ParseIP(form_values[used_offset])))
 					continue
@@ -146,7 +151,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 				switch subRType.Kind() {
 				case reflect.Struct:
 					// if lastDeep, ok := parents[subRType.PkgPath()+"/"+subRType.Name()]; !ok || lastDeep == deep {
-					rvalueTemp := reflect.MakeSlice(rtype.Field(i).Type, 0, 0)
+					rvalueTemp := reflect.MakeSlice(rField.Type, 0, 0)
 					offset := 0
 					for {
 						subRValue := reflect.New(subRType)
@@ -167,7 +172,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 					if subRType.Elem().Kind() == reflect.Struct {
 						var elemType = subRType.Elem()
 						// if lastDeep, ok := parents[elemType.PkgPath()+"/"+elemType.Name()]; !ok || lastDeep == deep {
-						rvalueTemp := reflect.MakeSlice(rtype.Field(i).Type, 0, 0)
+						rvalueTemp := reflect.MakeSlice(rField.Type, 0, 0)
 						offset := 0
 						for {
 							subRValue := reflect.New(elemType)
@@ -194,7 +199,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 						form_values = u.ValueGetter(id + "[]")
 					}
 					lenFv := len(form_values)
-					rvnew := reflect.MakeSlice(rtype.Field(i).Type, lenFv, lenFv)
+					rvnew := reflect.MakeSlice(rField.Type, lenFv, lenFv)
 					for j := 0; j < lenFv; j++ {
 						u.unmarshalField(context, rvnew.Index(j), form_values[j], extraTags, false)
 					}
@@ -214,7 +219,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 				}
 			}
 		} else {
-			return false, fmt.Errorf("cannot set value of (%s,%s) in fill", rtype.Field(i).Name, rtype.Field(i).Type.Name())
+			return false, fmt.Errorf("cannot set value of (%s,%s) in fill", rField.Name, rField.Type.Name())
 		}
 	}
 	if !success && err == nil {

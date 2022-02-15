@@ -11,7 +11,12 @@ type TestObj struct {
 
 type TestObj1 struct {
 	Key   string
-	Value string `default:""`
+	Value string `default:"default"`
+}
+
+type TestChildType struct {
+	TestObj1
+	Value2 string
 }
 
 func TestFromFile(t *testing.T) {
@@ -38,6 +43,16 @@ func TestFromWithDefaultValueFile(t *testing.T) {
 	var obj TestObj
 	err := UnmarshallFile("./test_file/novalue.yaml", &obj)
 	if err != nil || obj.Key != "test" || obj.Value != "default" {
+		t.Log(err)
+		t.Log(obj)
+		t.Fail()
+	}
+}
+
+func TestFromWithChildFile(t *testing.T) {
+	var obj TestChildType
+	err := UnmarshallFile("./test_file/novalue.yaml", &obj, defaultTag, "default")
+	if err != nil || obj.Key != "test" || obj.Value != "default" || obj.Value2 != "test" {
 		t.Log(err)
 		t.Log(obj)
 		t.Fail()
