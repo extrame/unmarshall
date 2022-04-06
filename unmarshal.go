@@ -144,10 +144,16 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 			case reflect.Slice:
 				fType := rField.Type
 				subRType := rField.Type.Elem()
-				if fType.PkgPath() == "net" && fType.Name() == "IP" && len(form_values) > 0 && used_offset < len(form_values) {
-					rvalue.Field(i).Set(reflect.ValueOf(net.ParseIP(form_values[used_offset])))
-					continue
+				//net.IP alias of []byte
+				if used_offset < len(form_values) {
+					if fType.PkgPath() == "net" && fType.Name() == "IP" {
+						rvalue.Field(i).Set(reflect.ValueOf(net.ParseIP(form_values[used_offset])))
+						continue
+					} else if subRType.Kind() == reflect.Uint8 {
+						rvalue.Field(i).SetBytes([]byte(form_values[used_offset]))
+					}
 				}
+
 				switch subRType.Kind() {
 				case reflect.Struct:
 					// if lastDeep, ok := parents[subRType.PkgPath()+"/"+subRType.Name()]; !ok || lastDeep == deep {
