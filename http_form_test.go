@@ -67,7 +67,7 @@ type TestedMapType struct {
 type TestedMapType2 struct {
 	Name       string
 	Sex        string
-	Definition map[string]map[string]TestedNestedType1
+	Definition map[string]map[string]*TestedNestedType1
 }
 
 type TestedNestedType struct {
@@ -155,6 +155,7 @@ func TestUnmarshalMap2(t *testing.T) {
 
 	err := Unmarshal(&obj, form, true)
 	fmt.Println(obj, err)
+	fmt.Println(obj.Definition["Body"]["Body2"])
 }
 
 func TestUnmarshalArray(t *testing.T) {

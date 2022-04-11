@@ -444,12 +444,13 @@ func (u *Unmarshaller) unmarshallMap(id string, mapValue reflect.Value, tag []st
 					if subRType.Elem().Kind() == reflect.Struct {
 						var elemType = subRType.Elem()
 						// if lastDeep, ok := parents[elemType.PkgPath()+"/"+elemType.Name()]; !ok || lastDeep == deep {
-						subRValue := reflect.New(elemType)
+						subElemValue := reflect.New(elemType)
 						//依靠下层返回进行终止
-						isNotEmpty, _ := u.unmarshalStructInForm(id+"["+subName+"]", subRValue, 0, deep+1, false)
+						isNotEmpty, _ := u.unmarshalStructInForm(id+"["+subName+"]", subElemValue, 0, deep+1, false)
 						if !isNotEmpty {
 							break
 						}
+						subRValue.Elem().Set(subElemValue)
 					}
 				case reflect.Map:
 					err := u.unmarshallMap(id+"["+subName+"]", subRValue.Elem(), tag, deep+1)
