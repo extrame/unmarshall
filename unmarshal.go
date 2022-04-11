@@ -112,6 +112,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 					// 	return false, err
 					// } else {
 					val.Set(tempVal)
+					thisObjectIsNotEmpty = true
 				}
 				//忽略可能的设置错误，进行到下一个
 				err = nil
@@ -120,6 +121,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 				if err = u.fill_struct(rField.Type, rvalue.Field(i), id, form_values, extraTags, used_offset, deep+1); err != nil {
 					return thisObjectIsNotEmpty, err
 				} else {
+					thisObjectIsNotEmpty = true
 					continue
 				}
 			case reflect.Interface:
