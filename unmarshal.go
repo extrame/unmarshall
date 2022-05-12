@@ -108,20 +108,20 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 				val := rvalue.Field(i)
 				typ := rField.Type.Elem()
 				tempVal := reflect.New(typ)
-				if err = u.fill_struct(typ, tempVal.Elem(), id, form_values, extraTags, used_offset, deep+1); err == nil {
+				if thisObjectIsNotEmpty, err = u.fill_struct(typ,
+					tempVal.Elem(),
+					id, form_values, extraTags, used_offset, deep+1); err == nil && thisObjectIsNotEmpty {
 					// 	return false, err
 					// } else {
 					val.Set(tempVal)
-					thisObjectIsNotEmpty = true
 				}
 				//忽略可能的设置错误，进行到下一个
 				err = nil
 				continue
 			case reflect.Struct:
-				if err = u.fill_struct(rField.Type, rvalue.Field(i), id, form_values, extraTags, used_offset, deep+1); err != nil {
+				if thisObjectIsNotEmpty, err = u.fill_struct(rField.Type, rvalue.Field(i), id, form_values, extraTags, used_offset, deep+1); err != nil {
 					return thisObjectIsNotEmpty, err
 				} else {
-					thisObjectIsNotEmpty = true
 					continue
 				}
 			case reflect.Interface:
@@ -133,7 +133,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 						res := values[0].Interface()
 						resValue := reflect.ValueOf(res)
 						resType := reflect.TypeOf(res)
-						if err = u.fill_struct(resType, resValue, id, form_values, extraTags, used_offset, deep+1); err != nil {
+						if thisObjectIsNotEmpty, err = u.fill_struct(resType, resValue, id, form_values, extraTags, used_offset, deep+1); err != nil {
 							rvalue.Field(i).Set(resValue)
 							return false, err
 						} else {
@@ -362,7 +362,7 @@ func (u *Unmarshaller) unmarshalField(contex string, v reflect.Value, form_value
 }
 
 func (u *Unmarshaller) fill_struct(typ reflect.Type,
-	val reflect.Value, id string, form_values []string, tag []string, used_offset int, deep int) error {
+	val reflect.Value, id string, form_values []string, tag []string, used_offset int, deep int) (bool, error) {
 	if typ.PkgPath() == "time" && typ.Name() == "Time" {
 		var fillby string
 		var fillby_valid = regexp.MustCompile(`^\s*fillby\((.*)\)\s*$`)
@@ -384,7 +384,7 @@ func (u *Unmarshaller) fill_struct(typ reflect.Type,
 			if unix, err := strconv.ParseInt(value, 10, 64); err == nil {
 				val.Set(reflect.ValueOf(time.Unix(unix, 0)))
 			} else {
-				return err
+				return false, err
 			}
 		default:
 			if fillby == "" {
@@ -395,7 +395,7 @@ func (u *Unmarshaller) fill_struct(typ reflect.Type,
 				if err == nil {
 					val.Set(reflect.ValueOf(time))
 				} else {
-					return err
+					return false, err
 				}
 			}
 		}
@@ -404,19 +404,20 @@ func (u *Unmarshaller) fill_struct(typ reflect.Type,
 			if typ.PkgPath()+"."+typ.Name() == k {
 				if v, err := fn(id); err == nil {
 					val.Set(v)
-					return nil
+					return true, nil
 				} else {
-					return err
+					return false, err
 				}
 				//if has, set,if not ,return err and the upper will do nothing
 			}
 		}
 		isNotEmpty, err := u.unmarshalStructInForm(id, val, 0, deep, false)
-		if isNotEmpty && err != nil {
-			return err
-		}
+		// if isNotEmpty && err != nil {
+		return isNotEmpty, err
+		// }
+
 	}
-	return nil
+	return true, nil
 }
 
 func (u *Unmarshaller) unmarshallMap(id string, mapValue reflect.Value, tag []string, deep int) error {
@@ -428,7 +429,7 @@ func (u *Unmarshaller) unmarshallMap(id string, mapValue reflect.Value, tag []st
 	if sub == nil {
 		return nil
 	}
-	for k, _ := range sub {
+	for k := range sub {
 		subName := strings.Split(strings.TrimPrefix(k, id+"["), "]")[0]
 		if _, ok := maps[subName]; !ok {
 			var newKValue = reflect.New(mapValue.Type().Key())
