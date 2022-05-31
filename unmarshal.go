@@ -135,7 +135,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 						resType := reflect.TypeOf(res)
 						if thisObjectIsNotEmpty, err = u.fill_struct(resType, resValue, id, form_values, extraTags, used_offset, deep+1); err != nil {
 							rvalue.Field(i).Set(resValue)
-							return false, err
+							return thisObjectIsNotEmpty, err
 						} else {
 							continue
 						}
@@ -190,7 +190,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 								break
 							}
 							if err != nil {
-								return false, errors.Wrap(err, "unmarshall []*struct err ")
+								return thisObjectIsNotEmpty, errors.Wrap(err, "unmarshall []*struct err ")
 							}
 							offset++
 							rvalueTemp = reflect.Append(rvalueTemp, subRValue)
@@ -216,7 +216,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 			case reflect.Map:
 				err := u.unmarshallMap(id, rvalue.Field(i), extraTags, deep)
 				if err != nil {
-					return false, errors.Wrap(err, "in unmarshall map")
+					return thisObjectIsNotEmpty, errors.Wrap(err, "in unmarshall map")
 				}
 			default:
 				if len(form_values) > 0 && used_offset < len(form_values) {
