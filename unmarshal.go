@@ -79,7 +79,6 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 	}
 	rtype := rvalue.Type()
 
-	success := false
 	for i := 0; i < rtype.NumField() && err == nil; i++ {
 		var id, defaultVal string
 		var form_values, extraTags []string
@@ -108,20 +107,24 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 				val := rvalue.Field(i)
 				typ := rField.Type.Elem()
 				tempVal := reflect.New(typ)
-				if thisObjectIsNotEmpty, err = u.fill_struct(typ,
+				var childIsNotEmpty bool
+				if childIsNotEmpty, err = u.fill_struct(typ,
 					tempVal.Elem(),
-					id, form_values, extraTags, used_offset, deep+1); err == nil && thisObjectIsNotEmpty {
+					id, form_values, extraTags, used_offset, deep+1); err == nil && childIsNotEmpty {
 					// 	return false, err
 					// } else {
 					val.Set(tempVal)
+					thisObjectIsNotEmpty = thisObjectIsNotEmpty || childIsNotEmpty
 				}
 				//忽略可能的设置错误，进行到下一个
 				err = nil
 				continue
 			case reflect.Struct:
-				if thisObjectIsNotEmpty, err = u.fill_struct(rField.Type, rvalue.Field(i), id, form_values, extraTags, used_offset, deep+1); err != nil {
-					return thisObjectIsNotEmpty, err
+				var childIsNotEmpty bool
+				if childIsNotEmpty, err = u.fill_struct(rField.Type, rvalue.Field(i), id, form_values, extraTags, used_offset, deep+1); childIsNotEmpty && err != nil {
+					return childIsNotEmpty, err
 				} else {
+					thisObjectIsNotEmpty = thisObjectIsNotEmpty || childIsNotEmpty
 					continue
 				}
 			case reflect.Interface:
@@ -221,17 +224,15 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 			default:
 				if len(form_values) > 0 && used_offset < len(form_values) {
 					u.unmarshalField(context, rvalue.Field(i), form_values[used_offset], extraTags, false)
-					success = true
+					thisObjectIsNotEmpty = true
 				} else if defaultVal != "" {
 					u.unmarshalField(context, rvalue.Field(i), defaultVal, extraTags, true)
+					thisObjectIsNotEmpty = true
 				}
 			}
 		} else {
-			return false, fmt.Errorf("cannot set value of (%s,%s) in fill", rField.Name, rField.Type.Name())
+			return thisObjectIsNotEmpty, fmt.Errorf("cannot set value of (%s,%s) in fill", rField.Name, rField.Type.Name())
 		}
-	}
-	if !success && err == nil {
-		err = errors.New("no more element")
 	}
 	return
 }
@@ -426,7 +427,7 @@ func (u *Unmarshaller) unmarshallMap(id string, mapValue reflect.Value, tag []st
 	if u.ValuesGetter != nil {
 		sub = u.ValuesGetter(id)
 	}
-	if sub == nil {
+	if len(sub) == 0 {
 		return nil
 	}
 	for k := range sub {
@@ -439,9 +440,11 @@ func (u *Unmarshaller) unmarshallMap(id string, mapValue reflect.Value, tag []st
 				subRValue := reflect.New(subRType)
 				switch subRType.Kind() {
 				case reflect.Struct:
-					isNotEmpty, _ := u.unmarshalStructInForm(id+"["+subName+"]", subRValue, 0, deep+1, false)
-					if !isNotEmpty {
-						break
+					isNotEmpty, err := u.unmarshalStructInForm(id+"["+subName+"]", subRValue, 0, deep+1, false)
+					if isNotEmpty && err != nil { //非空还出错了
+						return err
+					} else if !isNotEmpty {
+						continue
 					}
 				case reflect.Ptr:
 					if subRType.Elem().Kind() == reflect.Struct {
@@ -449,9 +452,11 @@ func (u *Unmarshaller) unmarshallMap(id string, mapValue reflect.Value, tag []st
 						// if lastDeep, ok := parents[elemType.PkgPath()+"/"+elemType.Name()]; !ok || lastDeep == deep {
 						subElemValue := reflect.New(elemType)
 						//依靠下层返回进行终止
-						isNotEmpty, _ := u.unmarshalStructInForm(id+"["+subName+"]", subElemValue, 0, deep+1, false)
-						if !isNotEmpty {
-							break
+						isNotEmpty, err := u.unmarshalStructInForm(id+"["+subName+"]", subElemValue, 0, deep+1, false)
+						if isNotEmpty && err != nil { //非空还出错了
+							return err
+						} else if !isNotEmpty {
+							continue
 						}
 						subRValue.Elem().Set(subElemValue)
 					}
