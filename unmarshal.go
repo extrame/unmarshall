@@ -122,13 +122,14 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 					if len(form_values) > 0 && used_offset < len(form_values) {
 						u.unmarshalField(context, tempVal, form_values[used_offset], extraTags, false)
 						thisObjectIsNotEmpty = true
-						val.Set(tempVal)
 					} else if defaultVal != "" {
 						u.unmarshalField(context, tempVal, defaultVal, extraTags, true)
 						thisObjectIsNotEmpty = true
 						val.Set(tempVal)
 					}
-
+					if tempVal.String() != "" {
+						val.Set(tempVal)
+					}
 				}
 
 				//忽略可能的设置错误，进行到下一个
