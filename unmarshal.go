@@ -107,15 +107,30 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 				val := rvalue.Field(i)
 				typ := rField.Type.Elem()
 				tempVal := reflect.New(typ)
-				var childIsNotEmpty bool
-				if childIsNotEmpty, err = u.fill_struct(typ,
-					tempVal.Elem(),
-					id, form_values, extraTags, used_offset, deep+1); err == nil && childIsNotEmpty {
-					// 	return false, err
-					// } else {
-					val.Set(tempVal)
-					thisObjectIsNotEmpty = thisObjectIsNotEmpty || childIsNotEmpty
+				switch typ.Kind() {
+				case reflect.Struct:
+					var childIsNotEmpty bool
+					if childIsNotEmpty, err = u.fill_struct(typ,
+						tempVal.Elem(),
+						id, form_values, extraTags, used_offset, deep+1); err == nil && childIsNotEmpty {
+						// 	return false, err
+						// } else {
+						val.Set(tempVal)
+						thisObjectIsNotEmpty = thisObjectIsNotEmpty || childIsNotEmpty
+					}
+				case reflect.String:
+					if len(form_values) > 0 && used_offset < len(form_values) {
+						u.unmarshalField(context, tempVal, form_values[used_offset], extraTags, false)
+						thisObjectIsNotEmpty = true
+						val.Set(tempVal)
+					} else if defaultVal != "" {
+						u.unmarshalField(context, tempVal, defaultVal, extraTags, true)
+						thisObjectIsNotEmpty = true
+						val.Set(tempVal)
+					}
+
 				}
+
 				//忽略可能的设置错误，进行到下一个
 				err = nil
 				continue
