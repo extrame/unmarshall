@@ -66,22 +66,23 @@ func GetChildNode(parent *yaml.Node, name string) (*yaml.Node, error) {
 
 func UnmarshallFile(fileName string, obj interface{}, tagName ...string) error {
 
-	var tName = defaultTag
-	var defaultValTag string
-	if len(tagName) > 0 {
-		tName = tagName[0]
-	}
-	if len(tagName) > 1 {
-		defaultValTag = tagName[1]
-	}
-
 	f, err := os.Open(fileName)
 	if err == nil {
 		var node = new(yaml.Node)
 		err = yaml.NewDecoder(f).Decode(node)
 		if err == nil || err == io.EOF {
-			return UnmarshalNode(node, obj, tName, defaultValTag)
+			return UnmarshalNode(node, obj, tagName...)
 		}
+	}
+	return err
+}
+
+func UnmarshallReader(source io.Reader, obj interface{}, tagName ...string) error {
+
+	var node = new(yaml.Node)
+	err := yaml.NewDecoder(source).Decode(node)
+	if err == nil || err == io.EOF {
+		return UnmarshalNode(node, obj, tagName...)
 	}
 	return err
 }
