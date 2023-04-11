@@ -203,9 +203,9 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 					thisObjectIsNotEmpty = true
 				}
 			}
-		} else {
+		} else if rField.IsExported() {
 			return thisObjectIsNotEmpty, fmt.Errorf("cannot set value of (%s,%s) in fill", rField.Name, rField.Type.Name())
-		}
+		} // else ignore the unexported field
 	}
 	return
 }
