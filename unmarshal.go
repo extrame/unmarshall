@@ -17,7 +17,8 @@ import (
 
 //Unmarshaller for specified struct, ValueGetter for how to get the value, it get the tag as input and return the value
 type Unmarshaller struct {
-	Values       func() map[string][]string
+	Values func() map[string][]string
+	//return values and if the result is array and should be filled in the struct by offset
 	ValueGetter  func(string) []string
 	ValuesGetter func(prefix string) url.Values
 	TagConcatter func(string, string) string
@@ -27,6 +28,7 @@ type Unmarshaller struct {
 	MaxLength             int
 	Tag                   string //the tag name of action control,the value is seperated by ',', first value is the overrided key, second is the default value
 	DefaultTag            string //the tag name to get the default value, if DefaultTag is not empty, the default value will got by the tag, or get from the second value of 'Tag' marked tag
+	ArrayValueGotByOffset bool   //if the value got from ValueGetter is array, it will be filled in the struct by offset
 }
 
 func (u *Unmarshaller) Unmarshall(v interface{}) error {
@@ -62,6 +64,13 @@ func (u *Unmarshaller) Unmarshall(v interface{}) error {
 				rv.SetMapIndex(reflect.ValueOf(key), reflect.ValueOf(value))
 			}
 		}
+	} else if rv.Kind() == reflect.Slice {
+		id, form_values, _, extraTags, err := u.getFormField("", func(key string) string { return "" }, "", 0, false)
+		if err == nil {
+			if err = u.unmarshallSlice("", rv.Type(), 0, form_values, rv, id, 0, extraTags); err != nil {
+				return err
+			}
+		}
 	} else {
 		return fmt.Errorf("v must point to a struct type")
 	}
@@ -87,7 +96,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 			u.unmarshalStructInForm(id, rvalue.Field(i), offset, deep, false)
 			continue
 		}
-		id, form_values, defaultVal, extraTags, err = u.getFormField(context, rField, offset, inarray)
+		id, form_values, defaultVal, extraTags, err = u.getFormField(context, rField.Tag.Get, rField.Name, offset, inarray)
 		if err == TooDeepErr {
 			err = nil
 			continue
@@ -98,7 +107,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 		thisObjectIsNotEmpty = thisObjectIsNotEmpty || len(form_values) > 0
 		increaseOffset := !(context != "" && inarray)
 		var used_offset = 0
-		if increaseOffset {
+		if increaseOffset && !u.ArrayValueGotByOffset {
 			used_offset = offset
 		}
 		if rvalue.Field(i).CanSet() {
@@ -124,7 +133,9 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 						thisObjectIsNotEmpty = true
 					} else if defaultVal != "" {
 						u.unmarshalField(context, tempVal.Elem(), defaultVal, extraTags, true)
-						thisObjectIsNotEmpty = true
+						if !inarray { // if in array, the rule to judge if the object is empty is exclude the default value
+							thisObjectIsNotEmpty = true
+						}
 					}
 					if tempVal.Elem().String() != "" {
 						val.Set(tempVal)
@@ -162,74 +173,10 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 					return false, fmt.Errorf("try to use UnmarshallForm to unmarshall interface type(%T) fail", rvalue.Interface())
 				}
 			case reflect.Slice:
-				fType := rField.Type
-				subRType := rField.Type.Elem()
-				//net.IP alias of []byte
-				if used_offset < len(form_values) {
-					if fType.PkgPath() == "net" && fType.Name() == "IP" {
-						rvalue.Field(i).Set(reflect.ValueOf(net.ParseIP(form_values[used_offset])))
-						continue
-					} else if subRType.Kind() == reflect.Uint8 {
-						rvalue.Field(i).SetBytes([]byte(form_values[used_offset]))
-					}
-				}
-
-				switch subRType.Kind() {
-				case reflect.Struct:
-					// if lastDeep, ok := parents[subRType.PkgPath()+"/"+subRType.Name()]; !ok || lastDeep == deep {
-					rvalueTemp := reflect.MakeSlice(rField.Type, 0, 0)
-					offset := 0
-					for {
-						subRValue := reflect.New(subRType)
-						isNotEmpty, _ := u.unmarshalStructInForm(id, subRValue, offset, deep+1, true)
-						if !isNotEmpty {
-							break
-						}
-						offset++
-						rvalueTemp = reflect.Append(rvalueTemp, subRValue.Elem())
-					}
-					if rvalueTemp.Len() > 0 {
-						rvalue.Field(i).Set(rvalueTemp)
-					}
-					// } else {
-					// 	err = fmt.Errorf("Too deep of type reuse %v", parents)
-					// }
-				case reflect.Ptr:
-					if subRType.Elem().Kind() == reflect.Struct {
-						var elemType = subRType.Elem()
-						// if lastDeep, ok := parents[elemType.PkgPath()+"/"+elemType.Name()]; !ok || lastDeep == deep {
-						rvalueTemp := reflect.MakeSlice(rField.Type, 0, 0)
-						offset := 0
-						for {
-							subRValue := reflect.New(elemType)
-							//依靠下层返回进行终止
-							isNotEmpty, err := u.unmarshalStructInForm(id, subRValue, offset, deep+1, true)
-							if !isNotEmpty {
-								break
-							}
-							if err != nil {
-								return thisObjectIsNotEmpty, errors.Wrap(err, "unmarshall []*struct err ")
-							}
-							offset++
-							rvalueTemp = reflect.Append(rvalueTemp, subRValue)
-						}
-						if rvalueTemp.Len() > 0 {
-							rvalue.Field(i).Set(rvalueTemp)
-						}
-						// } else {
-						// 	err = fmt.Errorf("Too deep of type reuse %v,%T,%d", parents, elemType.PkgPath()+"/"+elemType.Name(), deep)
-						// }
-					}
-				default:
-					if len(form_values) == 0 {
-						form_values = u.ValueGetter(id + "[]")
-					}
-					lenFv := len(form_values)
-					rvnew := reflect.MakeSlice(rField.Type, lenFv, lenFv)
-					for j := 0; j < lenFv; j++ {
-						u.unmarshalField(context, rvnew.Index(j), form_values[j], extraTags, false)
-					}
-					rvalue.Field(i).Set(rvnew)
+				if err := u.unmarshallSlice(context, rField.Type, used_offset, form_values, rvalue.Field(i), id, deep, extraTags); err == nil {
+					continue
+				} else {
+					return thisObjectIsNotEmpty, err
 				}
 			case reflect.Map:
 				err := u.unmarshallMap(id, rvalue.Field(i), extraTags, deep)
@@ -240,7 +187,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 				if len(form_values) > 0 && used_offset < len(form_values) {
 					u.unmarshalField(context, rvalue.Field(i), form_values[used_offset], extraTags, false)
 					thisObjectIsNotEmpty = true
-				} else if defaultVal != "" {
+				} else if defaultVal != "" && !inarray {
 					u.unmarshalField(context, rvalue.Field(i), defaultVal, extraTags, true)
 					thisObjectIsNotEmpty = true
 				}
@@ -252,18 +199,88 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 	return
 }
 
+func (u *Unmarshaller) unmarshallSlice(context string, fType reflect.Type, used_offset int,
+	form_values []string, target reflect.Value, id string, deep int, extraTags []string) error {
+	subRType := fType.Elem()
+	//net.IP alias of []byte
+	if used_offset < len(form_values) {
+		if fType.PkgPath() == "net" && fType.Name() == "IP" {
+			target.Set(reflect.ValueOf(net.ParseIP(form_values[used_offset])))
+			return nil
+		} else if subRType.Kind() == reflect.Uint8 {
+			target.SetBytes([]byte(form_values[used_offset]))
+		}
+	}
+
+	switch subRType.Kind() {
+	case reflect.Struct:
+		// if lastDeep, ok := parents[subRType.PkgPath()+"/"+subRType.Name()]; !ok || lastDeep == deep {
+		rvalueTemp := reflect.MakeSlice(fType, 0, 0)
+		offset := 0
+		for {
+			subRValue := reflect.New(subRType)
+			isNotEmpty, _ := u.unmarshalStructInForm(id, subRValue, offset, deep+1, true)
+			if !isNotEmpty {
+				break
+			}
+			offset++
+			rvalueTemp = reflect.Append(rvalueTemp, subRValue.Elem())
+		}
+		if rvalueTemp.Len() > 0 {
+			target.Set(rvalueTemp)
+		}
+		// } else {
+		// 	err = fmt.Errorf("Too deep of type reuse %v", parents)
+		// }
+	case reflect.Ptr:
+		if subRType.Elem().Kind() == reflect.Struct {
+			var elemType = subRType.Elem()
+			// if lastDeep, ok := parents[elemType.PkgPath()+"/"+elemType.Name()]; !ok || lastDeep == deep {
+			rvalueTemp := reflect.MakeSlice(fType, 0, 0)
+			offset := 0
+			for {
+				subRValue := reflect.New(elemType)
+				//依靠下层返回进行终止
+				isNotEmpty, err := u.unmarshalStructInForm(id, subRValue, offset, deep+1, true)
+				if !isNotEmpty {
+					break
+				}
+				if err != nil {
+					return errors.Wrap(err, "unmarshall []*struct err ")
+				}
+				offset++
+				rvalueTemp = reflect.Append(rvalueTemp, subRValue)
+			}
+			if rvalueTemp.Len() > 0 {
+				target.Set(rvalueTemp)
+			}
+			// } else {
+			// 	err = fmt.Errorf("Too deep of type reuse %v,%T,%d", parents, elemType.PkgPath()+"/"+elemType.Name(), deep)
+			// }
+		}
+	default:
+		lenFv := len(form_values)
+		rvnew := reflect.MakeSlice(fType, lenFv, lenFv)
+		for j := 0; j < lenFv; j++ {
+			u.unmarshalField(context, rvnew.Index(j), form_values[j], extraTags, false)
+		}
+		target.Set(rvnew)
+	}
+	return nil
+}
+
 var TooDeepErr = errors.New("too deep")
 
-func (u *Unmarshaller) getFormField(prefix string, t reflect.StructField, offset int, inarray bool) (string, []string, string, []string, error) {
+func (u *Unmarshaller) getFormField(prefix string, tagGetter func(key string) string, name string, offset int, inarray bool) (string, []string, string, []string, error) {
 
-	tag, tags := u.getTag(prefix, t, offset, inarray)
+	tag, tags := u.getTag(prefix, tagGetter, name, offset, inarray)
 
 	if len(tag) > u.MaxLength {
 		return "", nil, "", nil, TooDeepErr
 	}
 	var defaultVal string
 	if u.DefaultTag != "" {
-		defaultVal = t.Tag.Get(u.DefaultTag)
+		defaultVal = tagGetter(u.DefaultTag)
 	} else if len(tags) > 1 {
 		defaultVal = tags[1]
 	}
@@ -274,15 +291,15 @@ func (u *Unmarshaller) getFormField(prefix string, t reflect.StructField, offset
 }
 
 func (u *Unmarshaller) getTag(prefix string,
-	t reflect.StructField, offset int, inarray bool) (string, []string) {
+	t func(key string) string, name string, offset int, inarray bool) (string, []string) {
 	tags := []string{""}
-	tag := t.Tag.Get(u.Tag)
+	tag := t(u.Tag)
 	if tag != "" {
 		tags = strings.Split(tag, ",")
 		tag = tags[0]
 	}
 	if tag == "" {
-		tag = t.Name
+		tag = name
 	}
 
 	// values := []string{}
@@ -291,12 +308,10 @@ func (u *Unmarshaller) getTag(prefix string,
 	// 	values = (*form)[tag]
 	// }
 
-	if prefix != "" {
-		if inarray {
-			tag = u.TagConcatter(fmt.Sprintf(prefix+"[%d]", offset), tag)
-		} else {
-			tag = u.TagConcatter(prefix, tag)
-		}
+	if inarray {
+		tag = u.TagConcatter(fmt.Sprintf(prefix+"[%d]", offset), tag)
+	} else if prefix != "" {
+		tag = u.TagConcatter(prefix, tag)
 	}
 	return tag, tags
 }

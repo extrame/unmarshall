@@ -30,6 +30,26 @@ func execNode(content *yaml.Node, fetched map[string][]string) {
 			i = i + 1
 		} else if c.Kind == yaml.MappingNode {
 			execNode(content.Content[0], fetched)
+		} else if c.Kind == yaml.SequenceNode {
+			for j, sub := range c.Content {
+				execSequenceNode(sub, j, c.Value, fetched)
+			}
+		}
+	}
+}
+
+func execSequenceNode(sub *yaml.Node, i int, parent string, fetched map[string][]string) {
+	if sub.Kind == yaml.ScalarNode {
+		var arr = fetched[parent]
+		for len(arr) <= i {
+			arr = append(arr, "")
+		}
+		arr[i] = sub.Value
+		fetched[fmt.Sprintf("%s[]", parent)] = arr
+	} else {
+		subFetched := fetch(sub)
+		for j, subFetched := range subFetched {
+			fetched[fmt.Sprintf("%s[%d].%s", parent, i, j)] = subFetched
 		}
 	}
 }
@@ -40,20 +60,10 @@ func execScalarNode(contents []*yaml.Node, i int, parent string, fetched map[str
 		fetched[parent] = []string{content.Value}
 	} else if content.Kind == yaml.SequenceNode {
 		for i, sub := range content.Content {
-			if sub.Kind == yaml.ScalarNode {
-				var arr = fetched[parent]
-				for len(arr) <= i {
-					arr = append(arr, "")
-				}
-				arr[i] = sub.Value
-				fetched[fmt.Sprintf("%s[]", parent)] = arr
-			} else {
-				subFetched := fetch(sub)
-				for j, subFetched := range subFetched {
-					fetched[fmt.Sprintf("%s[%d].%s", parent, i, j)] = subFetched
-				}
-			}
+			execSequenceNode(sub, i, parent, fetched)
 		}
+	} else if content.Kind == yaml.MappingNode {
+		execNode(content.Content[0], fetched)
 	}
 }
 
@@ -126,9 +136,10 @@ func UnmarshalNode(node *yaml.Node, obj interface{}, tagName ...string) error {
 		TagConcatter: func(prefix string, tag string) string {
 			return prefix + "." + tag
 		},
-		AutoFill:   true,
-		Tag:        tName,
-		DefaultTag: defaultValTag,
+		AutoFill:              true,
+		Tag:                   tName,
+		DefaultTag:            defaultValTag,
+		ArrayValueGotByOffset: true,
 	}
 	return u.Unmarshall(obj)
 }

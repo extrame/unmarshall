@@ -1,0 +1,4 @@
+- key: test1
+  value: default1
+- key: test2
+  value: default2

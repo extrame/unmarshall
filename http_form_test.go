@@ -164,6 +164,13 @@ func TestUnmarshalArray(t *testing.T) {
 	form.Add("Name[]", "tested1")
 	form.Add("Name[]", "tested2")
 	err := Unmarshal(&obj, form, true)
+	if err != nil {
+		t.Error(err)
+		t.Fail()
+	} else if obj.Name[0] != "tested1" || obj.Name[1] != "tested2" {
+		t.Error("Unmarshal failed")
+		t.Fail()
+	}
 	fmt.Println(obj, form, err)
 }
 
@@ -216,8 +223,7 @@ func concatPrefix(prefix, tag string) string {
 func Unmarshal(v interface{}, form url.Values, autofill bool) error {
 
 	var maxlength = 0
-	for k, v := range form {
-		fmt.Println(k, v)
+	for k, _ := range form {
 		if len(k) > maxlength {
 			maxlength = len(k)
 		}
@@ -243,10 +249,17 @@ func Unmarshal(v interface{}, form url.Values, autofill bool) error {
 		ValueGetter: func(tag string) []string {
 			values := (*map[string][]string)(&form)
 			if values != nil {
-				if results, ok := (*values)[tag]; !ok {
-					//get the value of [Tag] from [tag](lower case), it maybe a problem TODO
-					return (*values)[strings.ToLower(tag)]
-				} else {
+				var lower = strings.ToLower(tag)
+				if results, ok := (*values)[tag]; ok {
+					return results
+				}
+				if results, ok := (*values)[lower]; ok {
+					return results
+				}
+				if results, ok := (*values)[tag+"[]"]; ok {
+					return results
+				}
+				if results, ok := (*values)[lower+"[]"]; ok {
 					return results
 				}
 			}

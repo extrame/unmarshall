@@ -58,3 +58,21 @@ func TestFromWithChildFile(t *testing.T) {
 		t.Fail()
 	}
 }
+
+func TestFromArray(t *testing.T) {
+	var obj []TestObj1
+	err := UnmarshallFile("./test_file/array.yaml", &obj, defaultTag, "default")
+	if err != nil {
+		t.Log(err)
+		t.Fail()
+	} else if len(obj) != 2 {
+		t.Error("array length error")
+		t.Log(obj)
+		t.Fail()
+	} else if err != nil || obj[0].Key != "test1" || obj[0].Value != "default1" || obj[1].Value != "default2" {
+		t.Error("array value error")
+		t.Log(obj)
+		t.Fail()
+	}
+	t.Log(obj)
+}
