@@ -216,6 +216,17 @@ func TestUnmarshalShownFieldAfterUnshownLongNameFiled(t *testing.T) {
 	fmt.Println(obj, err)
 }
 
+func TestUnmarshalString(t *testing.T) {
+	var str string
+	var form = make(url.Values)
+	form.Set("", "man")
+	err := Unmarshal(&str, form, true)
+	if str != "man" {
+		t.Fatal("Unmarshal failed")
+	}
+	fmt.Println(str, err)
+}
+
 func concatPrefix(prefix, tag string) string {
 	return prefix + "[" + tag + "]"
 }

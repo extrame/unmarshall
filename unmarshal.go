@@ -71,6 +71,17 @@ func (u *Unmarshaller) Unmarshall(v interface{}) error {
 				return err
 			}
 		}
+	} else if rv.Kind() == reflect.String {
+		tempVal := reflect.New(rv.Type())
+		_, form_values, _, extraTags, err := u.getFormField("", func(key string) string { return "" }, "", 0, false)
+		if err == nil {
+			if len(form_values) > 0 {
+				u.unmarshalField("", tempVal.Elem(), form_values[0], extraTags, false)
+			}
+			if tempVal.Elem().String() != "" {
+				rv.Set(tempVal.Elem())
+			}
+		}
 	} else {
 		return fmt.Errorf("v must point to a struct type")
 	}

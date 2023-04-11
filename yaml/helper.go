@@ -23,19 +23,39 @@ func fetch(node *yaml.Node) (fetched map[string][]string) {
 }
 
 func execNode(content *yaml.Node, fetched map[string][]string) {
-	for i := 0; i < len(content.Content); i++ {
-		var c = content.Content[i]
-		if c.Kind == yaml.ScalarNode {
-			execScalarNode(content.Content, i, c.Value, fetched)
-			i = i + 1
-		} else if c.Kind == yaml.MappingNode {
-			execNode(content.Content[0], fetched)
-		} else if c.Kind == yaml.SequenceNode {
-			for j, sub := range c.Content {
-				execSequenceNode(sub, j, c.Value, fetched)
-			}
+	if content.Kind == yaml.MappingNode {
+		for i := 0; i < len(content.Content); i = i + 2 {
+			var c = content.Content[i]
+			execScalarNode(content.Content[i+1], c.Value, fetched)
+		}
+	} else if content.Kind == yaml.SequenceNode {
+		for i, sub := range content.Content {
+			execSequenceNode(sub, i, "", fetched)
+		}
+	} else if content.Kind == yaml.ScalarNode {
+		execScalarNode(content, "", fetched)
+	} else if content.Kind == yaml.DocumentNode {
+		for i := 0; i < len(content.Content); i = i + 2 {
+			var c = content.Content[i]
+			execNode(c, fetched)
 		}
 	}
+	//
+	// 	i = i + 1
+	// }
+
+	// for i := 0; i < len(content.Content); i++ {
+	// 	var c = content.Content[i]
+	// 	fmt.Println(c)
+	// 	 else if c.Kind == yaml.MappingNode {
+	// 		execNode(content.Content[0], fetched)
+	// 	} else if c.Kind == yaml.SequenceNode {
+	// 		fmt.Println(fetched)
+	// 		for j, sub := range c.Content {
+	// 			execSequenceNode(sub, j, c.Value, fetched)
+	// 		}
+	// 	}
+	// }
 }
 
 func execSequenceNode(sub *yaml.Node, i int, parent string, fetched map[string][]string) {
@@ -54,8 +74,7 @@ func execSequenceNode(sub *yaml.Node, i int, parent string, fetched map[string][
 	}
 }
 
-func execScalarNode(contents []*yaml.Node, i int, parent string, fetched map[string][]string) {
-	var content = contents[i+1]
+func execScalarNode(content *yaml.Node, parent string, fetched map[string][]string) {
 	if content.Kind == yaml.ScalarNode {
 		fetched[parent] = []string{content.Value}
 	} else if content.Kind == yaml.SequenceNode {
