@@ -1,2 +1,5 @@
 key: test
 value2: test
+values:
+  ab: cd
+  ef: gh

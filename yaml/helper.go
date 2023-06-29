@@ -3,6 +3,7 @@ package yaml
 import (
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strings"
 
@@ -82,7 +83,16 @@ func execScalarNode(content *yaml.Node, parent string, fetched map[string][]stri
 			execSequenceNode(sub, i, parent, fetched)
 		}
 	} else if content.Kind == yaml.MappingNode {
-		execNode(content.Content[0], fetched)
+		for i := 0; i < len(content.Content); i = i + 2 {
+			var c = content.Content[i]
+			var name string
+			if parent != "" {
+				name = parent + "." + c.Value
+			} else {
+				name = c.Value
+			}
+			execScalarNode(content.Content[i+1], name, fetched)
+		}
 	}
 }
 
@@ -151,9 +161,22 @@ func UnmarshalNode(node *yaml.Node, obj interface{}, tagName ...string) error {
 			}
 			return []string{}
 		},
-		ValuesGetter: nil,
+		ValuesGetter: func(tag string) url.Values {
+			tag = strings.ToLower(tag)
+			var values = make(url.Values)
+			for k, v := range content {
+				if strings.HasPrefix(k, tag) {
+					values[k] = v
+				}
+			}
+			return values
+		},
+		BaseName: func(path string, prefix string) string {
+			prefix = strings.ToLower(prefix)
+			return strings.Split(strings.TrimPrefix(path, prefix+"."), ".")[0]
+		},
 		TagConcatter: func(prefix string, tag string) string {
-			return prefix + "." + tag
+			return strings.ToLower(prefix + "." + tag)
 		},
 		AutoFill:              true,
 		Tag:                   tName,

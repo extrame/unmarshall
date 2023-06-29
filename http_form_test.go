@@ -277,7 +277,10 @@ func Unmarshal(v interface{}, form url.Values, autofill bool) error {
 			return []string{}
 		},
 		TagConcatter: concatPrefix,
-		AutoFill:     autofill,
+		BaseName: func(path string, prefix string) string {
+			return strings.Split(strings.TrimPrefix(path, prefix+"["), "]")[0]
+		},
+		AutoFill: autofill,
 	}
 
 	return unmarshaller.Unmarshall(v)

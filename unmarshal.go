@@ -22,6 +22,7 @@ type Unmarshaller struct {
 	ValueGetter  func(string) []string
 	ValuesGetter func(prefix string) url.Values
 	TagConcatter func(string, string) string
+	BaseName     func(string, string) string
 	// FileGetter            func(string) (multipart.File, *multipart.FileHeader, error)
 	FillForSpecifiledType map[string]func(string) (reflect.Value, error)
 	AutoFill              bool
@@ -472,16 +473,18 @@ func (u *Unmarshaller) unmarshallMap(id string, mapValue reflect.Value, tag []st
 		return nil
 	}
 	for k := range sub {
-		subName := strings.Split(strings.TrimPrefix(k, id+"["), "]")[0]
+		//
+		subName := u.BaseName(k, id)
 		if _, ok := maps[subName]; !ok {
 			var newKValue = reflect.New(mapValue.Type().Key())
-			err := u.unmarshalField(id+"["+subName+"]", newKValue.Elem(), subName, tag, false)
+			var fullName = u.TagConcatter(id, subName)
+			err := u.unmarshalField(fullName, newKValue.Elem(), subName, tag, false)
 			if err == nil {
 				subRType := mapValue.Type().Elem()
 				subRValue := reflect.New(subRType)
 				switch subRType.Kind() {
 				case reflect.Struct:
-					isNotEmpty, err := u.unmarshalStructInForm(id+"["+subName+"]", subRValue, 0, deep+1, false)
+					isNotEmpty, err := u.unmarshalStructInForm(fullName, subRValue, 0, deep+1, false)
 					if isNotEmpty && err != nil { //非空还出错了
 						return err
 					} else if !isNotEmpty {
@@ -493,7 +496,7 @@ func (u *Unmarshaller) unmarshallMap(id string, mapValue reflect.Value, tag []st
 						// if lastDeep, ok := parents[elemType.PkgPath()+"/"+elemType.Name()]; !ok || lastDeep == deep {
 						subElemValue := reflect.New(elemType)
 						//依靠下层返回进行终止
-						isNotEmpty, err := u.unmarshalStructInForm(id+"["+subName+"]", subElemValue, 0, deep+1, false)
+						isNotEmpty, err := u.unmarshalStructInForm(fullName, subElemValue, 0, deep+1, false)
 						if isNotEmpty && err != nil { //非空还出错了
 							return err
 						} else if !isNotEmpty {
@@ -502,14 +505,14 @@ func (u *Unmarshaller) unmarshallMap(id string, mapValue reflect.Value, tag []st
 						subRValue.Elem().Set(subElemValue)
 					}
 				case reflect.Map:
-					err := u.unmarshallMap(id+"["+subName+"]", subRValue.Elem(), tag, deep+1)
+					err := u.unmarshallMap(fullName, subRValue.Elem(), tag, deep+1)
 					if err != nil {
 						return err
 					}
 				default:
-					form_values := u.ValueGetter(id + "[" + subName + "]")
+					form_values := u.ValueGetter(fullName)
 					if len(form_values) > 0 {
-						u.unmarshalField(id+"["+subName+"]", subRValue.Elem(), form_values[0], tag, false)
+						u.unmarshalField(fullName, subRValue.Elem(), form_values[0], tag, false)
 					} else {
 						return fmt.Errorf("%s[%s]has no value", id, subName)
 					}
