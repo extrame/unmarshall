@@ -15,7 +15,7 @@ import (
 	"github.com/pkg/errors"
 )
 
-//Unmarshaller for specified struct, ValueGetter for how to get the value, it get the tag as input and return the value
+// Unmarshaller for specified struct, ValueGetter for how to get the value, it get the tag as input and return the value
 type Unmarshaller struct {
 	Values func() map[string][]string
 	//return values and if the result is array and should be filled in the struct by offset
@@ -139,7 +139,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 						val.Set(tempVal)
 						thisObjectIsNotEmpty = thisObjectIsNotEmpty || childIsNotEmpty
 					}
-				case reflect.String:
+				case reflect.String, reflect.Bool:
 					if len(form_values) > 0 && used_offset < len(form_values) {
 						u.unmarshalField(context, tempVal.Elem(), form_values[used_offset], extraTags, false)
 						thisObjectIsNotEmpty = true
@@ -313,12 +313,6 @@ func (u *Unmarshaller) getTag(prefix string,
 	if tag == "" {
 		tag = name
 	}
-
-	// values := []string{}
-
-	// if form != nil {
-	// 	values = (*form)[tag]
-	// }
 
 	if inarray {
 		tag = u.TagConcatter(fmt.Sprintf(prefix+"[%d]", offset), tag)
