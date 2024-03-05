@@ -244,6 +244,7 @@ func Unmarshal(v interface{}, form url.Values, autofill bool) error {
 		Values: func() map[string][]string {
 			return form
 		},
+		Tag:       "goblet",
 		MaxLength: maxlength,
 		ValuesGetter: func(prefix string) url.Values {
 			values := (*map[string][]string)(&form)

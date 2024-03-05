@@ -149,7 +149,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 							thisObjectIsNotEmpty = true
 						}
 					}
-					if tempVal.Elem().String() != "" {
+					if thisObjectIsNotEmpty && tempVal.Elem().String() != "" {
 						val.Set(tempVal)
 					}
 				}
