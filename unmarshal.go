@@ -391,6 +391,8 @@ func (u *Unmarshaller) unmarshalField(contex string, v reflect.Value, form_value
 		fv := form_value
 		if fv == "1" || fv == "true" || fv == "True" || fv == "on" || fv == "yes" {
 			v.SetBool(true)
+		} else if fv == "0" || fv == "false" || fv == "False" || fv == "off" || fv == "no" {
+			v.SetBool(false)
 		}
 	default:
 		fmt.Println("unknown type", v.Kind())
