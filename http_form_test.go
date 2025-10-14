@@ -300,3 +300,21 @@ func TestUnmarshalTime(t *testing.T) {
 	err := Unmarshal(&obj, form, true)
 	fmt.Println(obj, err)
 }
+
+type TestedPointerOfString struct {
+	Name *string
+	Sex  *int
+}
+
+func (t *TestedPointerOfString) String() string {
+	return fmt.Sprintf("Name: %v, Sex: %v", *t.Name, *t.Sex)
+}
+
+func TestUnmarshalPointerOfString(t *testing.T) {
+	var obj = new(TestedPointerOfString)
+	var form = make(url.Values)
+	form.Set("Name", "tested")
+	form.Set("Sex", "1")
+	err := Unmarshal(obj, form, true)
+	fmt.Println(obj, err)
+}

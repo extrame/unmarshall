@@ -139,7 +139,7 @@ func (u *Unmarshaller) unmarshalStructInForm(context string,
 						val.Set(tempVal)
 						thisObjectIsNotEmpty = thisObjectIsNotEmpty || childIsNotEmpty
 					}
-				case reflect.String, reflect.Bool:
+				case reflect.String, reflect.Bool, reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 					if len(form_values) > 0 && used_offset < len(form_values) {
 						u.unmarshalField(context, tempVal.Elem(), form_values[used_offset], extraTags, false)
 						thisObjectIsNotEmpty = true
